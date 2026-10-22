@@ -7,6 +7,7 @@
 
 #include "catalog.h"
 #include "chart.h"
+#include "mictest.h"
 
 static const char* MEDIA_ROOT = "sdmc:/ultrapistar";
 
@@ -26,7 +27,7 @@ int main(int argc, char** argv) {
 
     int sel = 0, scroll = 0;
     const int VISIBLE = 20;
-    char status[256] = "D-pad: browse   A: inspect   +: quit";
+    char status[256] = "D-pad: browse   A: inspect   Y: mic test   +: quit";
 
     auto redraw = [&]() {
         printf("\x1b[2J");          // clear
@@ -50,6 +51,7 @@ int main(int argc, char** argv) {
         padUpdate(&pad);
         u64 k = padGetButtonsDown(&pad);
         if (k & HidNpadButton_Plus) break;
+        if (k & HidNpadButton_Y) { runMicTest(); redraw(); continue; }
         if (songs.empty()) continue;
         if (k & HidNpadButton_Down) { sel = std::min(sel + 1, (int)songs.size() - 1); redraw(); }
         if (k & HidNpadButton_Up)   { sel = std::max(sel - 1, 0); redraw(); }
