@@ -5,6 +5,7 @@
 #include "catalog.h"
 #include "chart.h"
 #include "fb.h"
+#include "img.h"
 #include "pitch.h"
 #include "player.h"
 #include "score.h"
@@ -45,6 +46,7 @@ private:
     Song song_;
     Chart chart_;
     Player player_;
+    Image art_;
     std::vector<std::unique_ptr<Scorer>> scorers_;
     std::vector<std::string> trackList_;
     int lastBeat_ = -1;

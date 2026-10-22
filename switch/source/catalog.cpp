@@ -31,6 +31,15 @@ static std::string ext(const std::string& name) {
     return e;
 }
 
+static std::string findArt(const std::string& dir) {
+    for (auto* n : {"cover.jpg", "cover.png", "cover.jpeg",
+                    "folder.jpg", "artwork.jpg"}) {
+        std::string p = join(dir, n);
+        if (isFile(p)) return p;
+    }
+    return "";
+}
+
 static bool isMedia(const std::string& name) {
     auto e = ext(name);
     return e == ".mp4" || e == ".mp3" || e == ".mkv" || e == ".webm"
@@ -159,6 +168,7 @@ static std::vector<Song> scanManifest(const std::string& root,
             s.chartPath = findChart(root, s.dir,
                                     stem(s.mediaPath.substr(
                                         s.mediaPath.find_last_of('/') + 1)));
+        s.artPath = findArt(s.dir);
         out.push_back(std::move(s));
     }
     return out;
@@ -175,6 +185,7 @@ std::vector<Song> scanCatalog(const std::string& root) {
         if (!pickMedia(s, full)) continue;
         std::tie(s.artist, s.title) = splitFolder(dir);
         s.dir = full;
+        s.artPath = findArt(full);
         s.chartPath = findChart(
             root, full,
             stem(s.mediaPath.substr(s.mediaPath.find_last_of('/') + 1)));
@@ -193,6 +204,7 @@ std::vector<Song> scanCatalog(const std::string& root) {
         std::tie(s.artist, s.title) = splitFolder(st);
         if (s.title.empty()) s.title = st;
         s.chartPath = findChart(root, root, st);
+        s.artPath = findArt(root);
         out.push_back(std::move(s));
     }
     return out;

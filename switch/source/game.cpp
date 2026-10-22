@@ -1,4 +1,5 @@
 #include "game.h"
+#include "img.h"
 #include <cmath>
 #include <cstring>
 #include <malloc.h>
@@ -70,6 +71,7 @@ bool Game::start(const Song& song, bool karaoke) {
     lastBeat_ = (int)((player_.mediaMs() - gapMs_) / beatMs_) - 1;
     if (lastBeat_ < -1) lastBeat_ = -1;
 
+    art_ = song.artPath.empty() ? Image{} : loadImage(song.artPath);
     quit_ = false;
     micThread_ = std::thread(&Game::micLoop, this);
     return true;
@@ -148,6 +150,11 @@ bool Game::frame(Fb& fb, uint32_t* buf) {
     if (player_.frame(&img, &iw, &ih)) {
         int dx = (W - iw) / 2, dy = (H - ih) / 2;
         fb.blit(buf, img, iw, ih, dx, dy, iw, ih);
+    } else if (art_.ok()) {
+        // audio-only (mp3 etc.) — cover as the stage backdrop
+        int s = std::min(H * 3 / 4, W / 2);
+        fb.blit(buf, art_.rgba.data(), art_.w, art_.h,
+                (W - s) / 2, (H - s) / 2, s, s);
     }
 
     const double t0 = ms - LANE_PAD_MS, t1 = ms + LANE_WINDOW_MS;

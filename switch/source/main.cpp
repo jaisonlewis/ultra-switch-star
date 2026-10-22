@@ -12,6 +12,7 @@
 #include "chart.h"
 #include "fb.h"
 #include "game.h"
+#include "img.h"
 #include "usb.h"
 
 static const char* MEDIA_ROOT = "sdmc:/ultrapistar";
@@ -81,6 +82,8 @@ int main(int argc, char** argv) {
     const uss::Song* pending = nullptr;
     State state = State::Browser;
     int sel = 0, scroll = 0, tick = 0;
+    std::string artLoaded;
+    uss::Image art;
 
     while (appletMainLoop()) {
         padUpdate(&pad);
@@ -148,6 +151,21 @@ int main(int argc, char** argv) {
             fb.text(buf, usbStatus, W / 2, H - 22, 14,
                     uss::rgb(120, 200, 255), true);
 
+            // cover preview for the highlighted song (lazy load)
+            if (!songs.empty()) {
+                const auto& sp = songs[sel].artPath;
+                if (sp != artLoaded) {
+                    artLoaded = sp;
+                    art = sp.empty() ? uss::Image{} : uss::loadImage(sp);
+                }
+                if (art.ok()) {
+                    int aw = 280, ax = W - aw - 70, ay = 160;
+                    fb.fill(buf, ax - 6, ay - 6, aw + 12, aw + 12,
+                            {255, 255, 255, 30});
+                    fb.blit(buf, art.rgba.data(), art.w, art.h,
+                            ax, ay, aw, aw);
+                }
+            }
             if (k & HidNpadButton_Down)
                 sel = std::min(sel + 1, (int)songs.size() - 1);
             if (k & HidNpadButton_Up)

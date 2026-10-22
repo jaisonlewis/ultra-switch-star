@@ -22,6 +22,7 @@ struct Song {
     std::string mediaPath;   // absolute sdmc path to media file
     std::string instPath;    // karaoke backing, when present
     std::string chartPath;   // .upsong when resolved
+    std::string artPath;     // cover.jpg/.png when present
     std::string sourceId;    // provider id (yt-<id>) when known
 };
 
