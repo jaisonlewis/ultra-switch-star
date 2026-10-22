@@ -16,7 +16,7 @@
 
 static const char* MEDIA_ROOT = "sdmc:/ultrapistar";
 
-enum class State { Browser, Play, Results };
+enum class State { Browser, Choose, Play, Results };
 
 static const char* gradeFor(const uss::TrackResult& r) {
     if (!r.notes) return "--";
@@ -49,7 +49,14 @@ int main(int argc, char** argv) {
 
     // USB mass storage — stick in the dock's USB-A ports mounts as
     // ums0:/ etc. Poll briefly for the async mount to land.
-    uss::usbInit();
+    bool usbOk = uss::usbInit();
+    char usbStatus[96];
+    if (!usbOk)
+        snprintf(usbStatus, sizeof(usbStatus),
+                 "usb init failed 0x%x", uss::usbInitRc());
+    else
+        snprintf(usbStatus, sizeof(usbStatus), "usb: no device mounted");
+    int lastMounts = 0;
     std::string rootsNote;
     auto rescan = [&]() {
         std::vector<uss::Song> out;
@@ -71,6 +78,7 @@ int main(int argc, char** argv) {
         svcSleepThread(50e6);
     std::vector<uss::Song> songs = rescan();
     std::unique_ptr<uss::Game> game;
+    const uss::Song* pending = nullptr;
     State state = State::Browser;
     int sel = 0, scroll = 0, tick = 0;
 
@@ -84,6 +92,21 @@ int main(int argc, char** argv) {
         const int W = fb.width(), H = fb.height();
 
         if (state == State::Browser) {
+            // periodic hotplug check (~every 2s at 60fps)
+            if (usbOk && tick % 120 == 0) {
+                int n = (int)uss::usbMounts().size();
+                if (n != lastMounts) {
+                    lastMounts = n;
+                    if (n > 0) {
+                        auto prev = songs.size();
+                        songs = rescan();
+                        if (sel >= (int)songs.size()) sel = (int)songs.size() - 1;
+                        if (sel < 0) sel = 0;
+                    }
+                }
+                snprintf(usbStatus, sizeof(usbStatus),
+                         n ? "usb: %d device(s) mounted" : "usb: no device — docked?", n);
+            }
             fb.clear(buf, uss::rgb(8, 10, 18));
             fb.text(buf, "ULTRA SWITCH STAR", W / 2, 40, 48,
                     uss::rgb(255, 255, 255), true);
@@ -122,6 +145,8 @@ int main(int argc, char** argv) {
             fb.text(buf,
                     "D-pad: browse   A: sing   X: rescan   +: quit",
                     W / 2, H - 44, 20, uss::rgb(140, 150, 175), true);
+            fb.text(buf, usbStatus, W / 2, H - 22, 14,
+                    uss::rgb(120, 200, 255), true);
 
             if (k & HidNpadButton_Down)
                 sel = std::min(sel + 1, (int)songs.size() - 1);
@@ -139,10 +164,38 @@ int main(int argc, char** argv) {
             if ((k & HidNpadButton_A) && !songs.empty()) {
                 const auto& s = songs[sel];
                 if (!s.chartPath.empty() && !s.mediaPath.empty()) {
-                    game = std::make_unique<uss::Game>();
-                    if (game->start(s)) state = State::Play;
-                    else game.reset();
+                    if (!s.instPath.empty()) {
+                        pending = &s;           // has both — ask which mix
+                        state = State::Choose;
+                    } else {
+                        game = std::make_unique<uss::Game>();
+                        if (game->start(s, true)) state = State::Play;
+                        else game.reset();
+                    }
                 }
+            }
+        } else if (state == State::Choose) {
+            // karaoke (vocals stripped) vs original video (vocals kept)
+            fb.clear(buf, uss::rgb(8, 10, 18));
+            fb.text(buf, pending->artist + " - " + pending->title,
+                    W / 2, H / 2 - 120, 30, uss::rgb(235, 238, 245), true);
+            fb.text(buf, "A: karaoke   (instrumental — you sing)",
+                    W / 2, H / 2 - 40, 26, uss::rgb(90, 210, 126), true);
+            fb.text(buf, "Y: original   (vocals kept — sing along)",
+                    W / 2, H / 2 + 10, 26, uss::rgb(126, 164, 255), true);
+            fb.text(buf, "B: back", W / 2, H / 2 + 90, 20,
+                    uss::rgb(140, 150, 175), true);
+            bool pickKaraoke = k & HidNpadButton_A;
+            bool pickOriginal = k & HidNpadButton_Y;
+            if (pickKaraoke || pickOriginal) {
+                game = std::make_unique<uss::Game>();
+                if (game->start(*pending, pickKaraoke))
+                    state = State::Play;
+                else { game.reset(); state = State::Browser; }
+                pending = nullptr;
+            } else if (k & HidNpadButton_B) {
+                pending = nullptr;
+                state = State::Browser;
             }
         } else if (state == State::Play) {
             bool alive = game->frame(fb, buf);

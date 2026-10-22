@@ -6,13 +6,17 @@
 namespace uss {
 
 static bool g_usbOn = false;
+static unsigned int g_rc = 0;
 
 bool usbInit() {
     if (g_usbOn) return true;
-    if (R_FAILED(usbHsFsInitialize(0))) return false;
+    g_rc = usbHsFsInitialize(0);
+    if (R_FAILED(g_rc)) return false;
     g_usbOn = true;
     return true;
 }
+
+unsigned int usbInitRc() { return g_rc; }
 
 void usbExit() {
     if (g_usbOn) usbHsFsExit();

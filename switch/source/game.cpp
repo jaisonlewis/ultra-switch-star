@@ -54,11 +54,12 @@ void Game::micLoop() {
 
 // ---------------- lifecycle ----------------
 
-bool Game::start(const Song& song) {
+bool Game::start(const Song& song, bool karaoke) {
     song_ = song;
     if (song.chartPath.empty() || !chart_.load(song.chartPath)) return false;
-    const std::string& media = song.instPath.empty()
-        ? song.mediaPath : song.instPath;   // karaoke backing wins
+    const std::string& media =
+        (karaoke && !song.instPath.empty())
+        ? song.instPath : song.mediaPath;
     if (!player_.open(media)) return false;
 
     beatMs_ = chart_.beatMs();

@@ -25,8 +25,9 @@ struct TrackResult {
 class Game {
 public:
     ~Game() { stop(); }
-    // song.mediaPath plays unless instPath exists (karaoke backing wins)
-    bool start(const Song& song);
+    // karaoke=true plays instPath when present (vocals stripped);
+    // false plays the original media (vocals kept)
+    bool start(const Song& song, bool karaoke = true);
     void stop();
 
     // one frame: advance scoring to the media clock and draw the overlay

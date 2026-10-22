@@ -12,6 +12,8 @@ namespace uss {
 // service is unavailable (e.g. fsp-usb running under SX OS).
 bool usbInit();
 void usbExit();
+// last usbHsFsInitialize result for on-screen diagnostics
+unsigned int usbInitRc();
 
 // mount roots that currently exist — e.g. "ums0:/". Poll again after a
 // status-change event or a short delay for hotplug.
