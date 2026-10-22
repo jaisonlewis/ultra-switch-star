@@ -12,6 +12,7 @@
 #include "chart.h"
 #include "fb.h"
 #include "game.h"
+#include "usb.h"
 
 static const char* MEDIA_ROOT = "sdmc:/ultrapistar";
 
@@ -46,7 +47,29 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    std::vector<uss::Song> songs = uss::scanCatalog(MEDIA_ROOT);
+    // USB mass storage — stick in the dock's USB-A ports mounts as
+    // ums0:/ etc. Poll briefly for the async mount to land.
+    uss::usbInit();
+    std::string rootsNote;
+    auto rescan = [&]() {
+        std::vector<uss::Song> out;
+        std::vector<std::string> roots = uss::usbLibraryRoots("ultrapistar");
+        roots.push_back(MEDIA_ROOT);           // sdmc fallback
+        rootsNote.clear();
+        for (auto& r : roots) {
+            auto part = uss::scanCatalog(r);
+            if (!part.empty()) {
+                out.insert(out.end(), part.begin(), part.end());
+                if (!rootsNote.empty()) rootsNote += " + ";
+                rootsNote += r;
+            }
+        }
+        return out;
+    };
+    // give the async UMS mount a moment before the first scan
+    for (int i = 0; i < 60 && uss::usbMounts().empty(); ++i)
+        svcSleepThread(50e6);
+    std::vector<uss::Song> songs = rescan();
     std::unique_ptr<uss::Game> game;
     State state = State::Browser;
     int sel = 0, scroll = 0, tick = 0;
@@ -97,7 +120,7 @@ int main(int argc, char** argv) {
                         uss::rgb(150, 160, 180), true);
             }
             fb.text(buf,
-                    "D-pad: browse   A: sing   +: quit",
+                    "D-pad: browse   A: sing   X: rescan   +: quit",
                     W / 2, H - 44, 20, uss::rgb(140, 150, 175), true);
 
             if (k & HidNpadButton_Down)
@@ -108,6 +131,11 @@ int main(int argc, char** argv) {
                 sel = std::max(sel - VISIBLE, 0);
             if (k & HidNpadButton_R)
                 sel = std::min(sel + VISIBLE, (int)songs.size() - 1);
+            if (k & HidNpadButton_X) {
+                songs = rescan();
+                sel = std::min(sel, (int)songs.size() - 1);
+                if (sel < 0) sel = 0;
+            }
             if ((k & HidNpadButton_A) && !songs.empty()) {
                 const auto& s = songs[sel];
                 if (!s.chartPath.empty() && !s.mediaPath.empty()) {
@@ -157,6 +185,7 @@ int main(int argc, char** argv) {
     }
 
     game.reset();
+    uss::usbExit();
     fb.close();
     return 0;
 }

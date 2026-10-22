@@ -35,6 +35,7 @@ ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 LIBS	:= -lavformat -lavcodec -lswscale -lswresample -lavutil \
+	   -lusbhsfs \
 	   -lfreetype -lharfbuzz -lpng -ldav1d -lbz2 -lz \
 	   -lnx -lstdc++ -lm
 
@@ -65,9 +66,11 @@ export HFILES_BIN	:=	$(addsuffix .h,$(subst .,_,$(BINFILES)))
 export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 			$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
 			-I$(PORTLIBS)/include/freetype2 \
+			-I$(CURDIR)/thirdparty/libusbhsfs/include \
 			-I$(CURDIR)/$(BUILD)
 
-export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
+export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib) \
+			-L$(CURDIR)/thirdparty/libusbhsfs/lib
 
 ifeq ($(strip $(ICON)),)
 icons := $(wildcard *.jpg)
