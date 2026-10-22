@@ -18,7 +18,7 @@ INCLUDES	:=	include
 #ROMFS	:=	romfs
 
 APP_TITLE	:=	Ultra Switch Star
-APP_AUTHOR	:=	UPS
+APP_AUTHOR	:=	Jaison Lewis
 APP_VERSION	:=	0.1.0
 
 #---------------------------------------------------------------------------------
