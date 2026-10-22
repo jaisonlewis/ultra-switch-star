@@ -34,7 +34,9 @@ CXXFLAGS	:=	$(CFLAGS) -std=gnu++20 -fno-rtti
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:= -lnx
+LIBS	:= -lavformat -lavcodec -lswscale -lswresample -lavutil \
+	   -lfreetype -lharfbuzz -lpng -ldav1d -lbz2 -lz \
+	   -lnx -lstdc++ -lm
 
 LIBDIRS	:=	$(PORTLIBS) $(LIBNX)
 
@@ -62,6 +64,7 @@ export HFILES_BIN	:=	$(addsuffix .h,$(subst .,_,$(BINFILES)))
 
 export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 			$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
+			-I$(PORTLIBS)/include/freetype2 \
 			-I$(CURDIR)/$(BUILD)
 
 export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
