@@ -33,6 +33,15 @@ std::vector<std::string> usbMounts() {
     return out;
 }
 
+// physical = mass-storage devices the OS sees; mounted = filesystems
+// that actually mounted. seen>0 & mounted==0 -> FS/partition problem;
+// seen==0 -> the stick never enumerated at all (port/power/drive).
+std::pair<unsigned, unsigned> usbCounts() {
+    if (!g_usbOn) return {0, 0};
+    return {usbHsFsGetPhysicalDeviceCount(),
+            usbHsFsGetMountedDeviceCount()};
+}
+
 std::vector<std::string> usbLibraryRoots(const std::string& subdir) {
     std::vector<std::string> out;
     for (auto& m : usbMounts()) {

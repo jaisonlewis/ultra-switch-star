@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    // USB mass storage — stick in the dock's USB-A ports mounts as
+    // USB mass storage ï¿½ stick in the dock's USB-A ports mounts as
     // ums0:/ etc. Poll briefly for the async mount to land.
     bool usbOk = uss::usbInit();
     char usbStatus[96];
@@ -97,7 +97,8 @@ int main(int argc, char** argv) {
         if (state == State::Browser) {
             // periodic hotplug check (~every 2s at 60fps)
             if (usbOk && tick % 120 == 0) {
-                int n = (int)uss::usbMounts().size();
+                auto [seen, mnt] = uss::usbCounts();
+                int n = (int)mnt;
                 if (n != lastMounts) {
                     lastMounts = n;
                     if (n > 0) {
@@ -107,8 +108,15 @@ int main(int argc, char** argv) {
                         if (sel < 0) sel = 0;
                     }
                 }
-                snprintf(usbStatus, sizeof(usbStatus),
-                         n ? "usb: %d device(s) mounted" : "usb: no device — docked?", n);
+                if (mnt)
+                    snprintf(usbStatus, sizeof(usbStatus),
+                             "usb: %u device(s) mounted", mnt);
+                else if (seen)
+                    snprintf(usbStatus, sizeof(usbStatus),
+                             "usb: %u seen, none mountable - fs?", seen);
+                else
+                    snprintf(usbStatus, sizeof(usbStatus),
+                             "usb: nothing detected - reseat stick?");
             }
             fb.clear(buf, uss::rgb(8, 10, 18));
             fb.text(buf, "ULTRA SWITCH STAR", W / 2, 40, 48,
@@ -183,7 +191,7 @@ int main(int argc, char** argv) {
                 const auto& s = songs[sel];
                 if (!s.chartPath.empty() && !s.mediaPath.empty()) {
                     if (!s.instPath.empty()) {
-                        pending = &s;           // has both — ask which mix
+                        pending = &s;           // has both ï¿½ ask which mix
                         state = State::Choose;
                     } else {
                         game = std::make_unique<uss::Game>();
@@ -197,9 +205,9 @@ int main(int argc, char** argv) {
             fb.clear(buf, uss::rgb(8, 10, 18));
             fb.text(buf, pending->artist + " - " + pending->title,
                     W / 2, H / 2 - 120, 30, uss::rgb(235, 238, 245), true);
-            fb.text(buf, "A: karaoke   (instrumental — you sing)",
+            fb.text(buf, "A: karaoke   (instrumental ï¿½ you sing)",
                     W / 2, H / 2 - 40, 26, uss::rgb(90, 210, 126), true);
-            fb.text(buf, "Y: original   (vocals kept — sing along)",
+            fb.text(buf, "Y: original   (vocals kept ï¿½ sing along)",
                     W / 2, H / 2 + 10, 26, uss::rgb(126, 164, 255), true);
             fb.text(buf, "B: back", W / 2, H / 2 + 90, 20,
                     uss::rgb(140, 150, 175), true);
