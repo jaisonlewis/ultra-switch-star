@@ -86,6 +86,8 @@ int main(int argc, char** argv) {
               rootsNote.c_str());
     std::unique_ptr<uss::Game> game;
     const uss::Song* pending = nullptr;
+    bool pendingAlt = false;                 // chart carries romaji alts
+    bool wantRom = false;                    // user's lyric-script pick
     State state = State::Browser;
     int sel = 0, scroll = 0, tick = 0;
     std::string artLoaded;
@@ -199,8 +201,14 @@ int main(int argc, char** argv) {
                 if (!s.chartPath.empty() && !s.mediaPath.empty()) {
                     uss::diag("start %s (%s)", s.mediaPath.c_str(),
                               s.instPath.empty() ? "orig" : "has-inst");
-                    if (!s.instPath.empty()) {
-                        pending = &s;           // has both � ask which mix
+                    // romanized alternates live in the chart — a quick
+                    // load detects them without touching the media
+                    uss::Chart probe;
+                    pendingAlt = probe.load(s.chartPath) && probe.hasAlt();
+                    wantRom = pendingAlt;    // romaji is the friendlier
+                                             // default for kanji/hangul
+                    if (!s.instPath.empty() || pendingAlt) {
+                        pending = &s;       // choices to make — ask
                         state = State::Choose;
                     } else {
                         game = std::make_unique<uss::Game>();
@@ -210,21 +218,39 @@ int main(int argc, char** argv) {
                 }
             }
         } else if (state == State::Choose) {
-            // karaoke (vocals stripped) vs original video (vocals kept)
+            // karaoke (vocals stripped) vs original video (vocals kept),
+            // plus the native/romaji lyric choice on dual-script charts
             fb.clear(buf, uss::rgb(8, 10, 18));
             fb.text(buf, pending->artist + " - " + pending->title,
-                    W / 2, H / 2 - 120, 30, uss::rgb(235, 238, 245), true);
-            fb.text(buf, "A: karaoke   (instrumental � you sing)",
-                    W / 2, H / 2 - 40, 26, uss::rgb(90, 210, 126), true);
-            fb.text(buf, "Y: original   (vocals kept � sing along)",
-                    W / 2, H / 2 + 10, 26, uss::rgb(126, 164, 255), true);
-            fb.text(buf, "B: back", W / 2, H / 2 + 90, 20,
+                    W / 2, H / 2 - 140, 30, uss::rgb(235, 238, 245), true);
+            int y = H / 2 - 60;
+            if (!pending->instPath.empty()) {
+                fb.text(buf, "A: karaoke   (instrumental — you sing)",
+                        W / 2, y, 26, uss::rgb(90, 210, 126), true);
+                fb.text(buf, "Y: original   (vocals kept — sing along)",
+                        W / 2, y + 46, 26, uss::rgb(126, 164, 255), true);
+                y += 96;
+            } else {
+                fb.text(buf, "A: play", W / 2, y, 26,
+                        uss::rgb(90, 210, 126), true);
+                y += 50;
+            }
+            if (pendingAlt) {
+                fb.text(buf, wantRom
+                        ? "X: lyrics — romaji  [native]"
+                        : "X: lyrics — [romaji]  native",
+                        W / 2, y, 24, uss::rgb(230, 200, 110), true);
+                y += 50;
+            }
+            fb.text(buf, "B: back", W / 2, y + 20, 20,
                     uss::rgb(140, 150, 175), true);
+            if (pendingAlt && (k & HidNpadButton_X)) wantRom = !wantRom;
             bool pickKaraoke = k & HidNpadButton_A;
-            bool pickOriginal = k & HidNpadButton_Y;
+            bool pickOriginal = !pending->instPath.empty()
+                                && (k & HidNpadButton_Y);
             if (pickKaraoke || pickOriginal) {
                 game = std::make_unique<uss::Game>();
-                if (game->start(*pending, pickKaraoke))
+                if (game->start(*pending, pickKaraoke, wantRom))
                     state = State::Play;
                 else { game.reset(); state = State::Browser; }
                 pending = nullptr;

@@ -81,6 +81,8 @@ bool Chart::load(const std::string& path) {
             n.length = nv->get("l")->asInt();
             n.pitch = nv->get("p")->asInt();
             n.text = nv->get("t")->asStr();
+            auto at = nv->get("at");
+            n.alt = at->isStr() ? at->asStr() : "";
             n.wordBreak = nv->get("wb")->asInt() != 0;
             auto k = nv->get("k");
             n.kind = k->isStr() ? k->asStr() : "normal";

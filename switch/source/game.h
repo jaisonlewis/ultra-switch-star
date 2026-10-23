@@ -28,7 +28,7 @@ public:
     ~Game() { stop(); }
     // karaoke=true plays instPath when present (vocals stripped);
     // false plays the original media (vocals kept)
-    bool start(const Song& song, bool karaoke = true);
+    bool start(const Song& song, bool karaoke = true, bool rom = false);
     void stop();
 
     // one frame: advance scoring to the media clock and draw the overlay

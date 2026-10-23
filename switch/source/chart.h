@@ -14,6 +14,7 @@ struct Note {
     int pitch = 0;           // tone_abs scale (C2=0)
     std::string kind = "normal";  // normal|golden|freestyle|rap|rap-golden
     std::string text;        // syllable (leading ~ = word join)
+    std::string alt;         // romanized syllable for non-latin charts ("at")
     bool wordBreak = false;
 };
 
@@ -26,6 +27,14 @@ struct Chart {
     double beatMs() const;                 // 15000/bpm — ms per beat
     double gapMs() const;                  // GAP header (ms)
     bool isDuet() const { return tracks.size() > 1; }
+    // any note carrying a romanized alternate → the player may offer
+    // a native/romaji lyric choice at song select
+    bool hasAlt() const {
+        for (auto& kv : tracks)
+            for (auto& n : kv.second)
+                if (!n.alt.empty()) return true;
+        return false;
+    }
 
     std::vector<std::string> trackNames() const;
     // notes grouped into lyric lines split at break beats

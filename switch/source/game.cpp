@@ -55,9 +55,13 @@ void Game::micLoop() {
 
 // ---------------- lifecycle ----------------
 
-bool Game::start(const Song& song, bool karaoke) {
+bool Game::start(const Song& song, bool karaoke, bool rom) {
     song_ = song;
     if (song.chartPath.empty() || !chart_.load(song.chartPath)) return false;
+    if (rom)                                   // romaji lyric choice —
+        for (auto& kv : chart_.tracks)         // timing/breaks untouched
+            for (auto& n : kv.second)
+                if (!n.alt.empty()) n.text = n.alt;
     const std::string& media =
         (karaoke && !song.instPath.empty())
         ? song.instPath : song.mediaPath;
