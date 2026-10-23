@@ -54,7 +54,12 @@ private:
 
     std::atomic<bool> quit_{false}, micOk_{false};
     std::atomic<int> toneAbs_{-1};
-    std::thread micThread_;
+    BigThread micThread_;            // explicit stack — small default
+                                     // stacks + DSP don't mix
+
+    // chart_.lines() builds vectors by value — far too hot per-frame;
+    // cache per track at start() and index it instead
+    std::vector<std::vector<std::vector<const Note*>>> linesByTrack_;
 
     // recent sung tones for the lane trail {ms, toneAbs, hit}
     std::deque<std::tuple<double,int,bool>> trail_;

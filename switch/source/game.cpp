@@ -66,20 +66,29 @@ bool Game::start(const Song& song, bool karaoke) {
     beatMs_ = chart_.beatMs();
     gapMs_ = chart_.gapMs();
     trackList_ = chart_.trackNames();
-    for (auto& t : trackList_)
+    scorers_.clear();
+    linesByTrack_.clear();
+    res_.clear();
+    finDone_ = false;
+    trail_.clear();
+    pops_.clear();
+    for (auto& t : trackList_) {
         scorers_.push_back(std::make_unique<Scorer>(chart_, t, 1, true));
+        linesByTrack_.push_back(chart_.lines(t));
+    }
     lastBeat_ = (int)((player_.mediaMs() - gapMs_) / beatMs_) - 1;
     if (lastBeat_ < -1) lastBeat_ = -1;
 
     art_ = song.artPath.empty() ? Image{} : loadImage(song.artPath);
     quit_ = false;
-    micThread_ = std::thread(&Game::micLoop, this);
+    micThread_.start([](void* p) -> void* {
+        ((Game*)p)->micLoop(); return nullptr; }, this, 512 << 10);
     return true;
 }
 
 void Game::stop() {
     quit_ = true;
-    if (micThread_.joinable()) micThread_.join();
+    micThread_.join();
     player_.close();
 }
 
@@ -125,9 +134,9 @@ bool Game::frame(Fb& fb, uint32_t* buf) {
     // sung trail point this frame
     int tone = toneAbs_.load();
     bool hit = false;
-    if (tone >= 0 && !trackList_.empty()) {
+    if (tone >= 0 && !linesByTrack_.empty()) {
         const Note* cur = nullptr;
-        for (auto& l : chart_.lines(trackList_[0]))
+        for (auto& l : linesByTrack_[0])
             for (const Note* n : l) {
                 double s = chart_.beatToMs(n->start),
                        e = chart_.beatToMs(n->start + n->length);
@@ -151,7 +160,7 @@ bool Game::frame(Fb& fb, uint32_t* buf) {
         int dx = (W - iw) / 2, dy = (H - ih) / 2;
         fb.blit(buf, img, iw, ih, dx, dy, iw, ih);
     } else if (art_.ok()) {
-        // audio-only (mp3 etc.) — cover as the stage backdrop
+        // audio-only (mp3 etc.) ï¿½ cover as the stage backdrop
         int s = std::min(H * 3 / 4, W / 2);
         fb.blit(buf, art_.rgba.data(), art_.w, art_.h,
                 (W - s) / 2, (H - s) / 2, s, s);
@@ -171,7 +180,7 @@ bool Game::frame(Fb& fb, uint32_t* buf) {
         fb.fill(buf, lx0, y0, lx1 - lx0, bandH - 2, {10, 14, 28, 190});
 
         // visible notes â†’ tone range
-        auto lines = chart_.lines(trackList_[ti]);
+        auto& lines = linesByTrack_[ti];
         int lo = 1 << 20, hi = -1;
         for (auto& l : lines)
             for (const Note* n : l) {
@@ -240,10 +249,10 @@ bool Game::frame(Fb& fb, uint32_t* buf) {
     fb.fill(buf, nowX - 1, ly0, 3, lh, {255, 255, 255, 200});
 
     // ---- lyrics ----
-    {
+    if (!linesByTrack_.empty()) {
         const char* cur = nullptr;
         std::string nxt;
-        for (auto& l : chart_.lines(trackList_[0])) {
+        for (auto& l : linesByTrack_[0]) {
             double s = chart_.beatToMs(l[0]->start),
                    e = chart_.beatToMs(l.back()->start
                                        + l.back()->length);

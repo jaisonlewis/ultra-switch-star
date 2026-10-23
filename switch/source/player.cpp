@@ -38,15 +38,16 @@ bool Player::open(const std::string& path) {
 
     path_ = path;
     wall0_ = mono_ns();
-    tDec_ = std::thread(&Player::decodeLoop, this);
+    tDec_.start([](void* p) -> void* {
+        ((Player*)p)->decodeLoop(); return nullptr; }, this, 1 << 20);
     return true;
 }
 
 void Player::close() {
     quit_ = true;
     acv_.notify_all();
-    if (tDec_.joinable()) tDec_.join();
-    if (tAud_.joinable()) tAud_.join();
+    tDec_.join();
+    tAud_.join();
     if (audioOn_) { audoutStopAudioOut(); audoutExit(); audioOn_ = false; }
 }
 
@@ -65,10 +66,13 @@ double Player::mediaMs() const {
 }
 
 bool Player::frame(uint8_t const** rgba, int* w, int* h) {
-    std::lock_guard<std::mutex> l(vmu_);
-    if (vbuf_.empty() || vpts_ < 0 || vpts_ > mediaMs() + 150)
-        return false;                    // nothing due yet
-    *rgba = vbuf_.data(); *w = vw_; *h = vh_;
+    {
+        std::lock_guard<std::mutex> l(vmu_);
+        if (!vfront_.empty() && vpts_ >= 0 && vpts_ <= mediaMs() + 150)
+            vshow_.swap(vfront_);        // new frame due — take ownership;
+    }                                    // vshow_ is ours to draw from
+    if (vshow_.empty()) return false;    // hold the last frame otherwise
+    *rgba = vshow_.data(); *w = vw_; *h = vh_;
     return true;
 }
 
@@ -103,7 +107,8 @@ void Player::audioFeeder() {
             int16_t* dst = (int16_t*)b->buffer;
             for (size_t k = 0; k < have; ++k) { dst[k] = aq_.front(); aq_.pop_front(); }
             for (size_t k = have; k < need; ++k) dst[k] = 0;
-            b->data_size = have * 2;
+            b->data_size = need * 2;     // underrun -> silence, not a
+                                         // zero-length buffer
             l.unlock();
             audoutAppendAudioOutBuffer(b);
         }
@@ -161,7 +166,9 @@ void Player::decodeLoop() {
                 if (audoutInitialize() == 0) {
                     audoutStartAudioOut();
                     audioOn_ = true;
-                    tAud_ = std::thread(&Player::audioFeeder, this);
+                    tAud_.start([](void* p) -> void* {
+                        ((Player*)p)->audioFeeder();
+                        return nullptr; }, this, 256 << 10);
                 }
             }
         }
@@ -182,20 +189,22 @@ void Player::decodeLoop() {
                         fr->width, fr->height, (AVPixelFormat)fr->format,
                         dw, dh, AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr,
                         nullptr, nullptr);
-                    std::vector<uint8_t> out(dw * dh * 4);
-                    uint8_t* dst[4] = {out.data(), nullptr, nullptr, nullptr};
+                    vback_.resize((size_t)dw * dh * 4);
+                    uint8_t* dst[4] = {vback_.data(), nullptr, nullptr, nullptr};
                     int stride[4] = {dw * 4, 0, 0, 0};
                     sws_scale(sws, fr->data, fr->linesize, 0, fr->height,
                               dst, stride);
                     int64_t pts = fr->best_effort_timestamp == AV_NOPTS_VALUE
                         ? -1 : (int64_t)(fr->best_effort_timestamp
                              * av_q2d(fmt->streams[vidx]->time_base) * 1000);
-                    std::lock_guard<std::mutex> l(vmu_);
-                    vbuf_.swap(out);
-                    vw_ = dw; vh_ = dh;
-                    if (pts >= 0) vpts_ = pts;
-                    // coarse A/V sync: if we're decoding ahead of the
-                    // audio clock, nap briefly so the queue doesn't grow
+                    {
+                        std::lock_guard<std::mutex> l(vmu_);
+                        vfront_.swap(vback_);          // publish
+                        vw_ = dw; vh_ = dh;
+                        if (pts >= 0) vpts_ = pts;
+                    }
+                    // coarse A/V sync — OUTSIDE the lock so frame()
+                    // never blocks on a decode-side nap
                     while (!quit_ && vpts_ > mediaMs() + 500)
                         svcSleepThread(10e6);
                 }
