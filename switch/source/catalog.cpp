@@ -31,7 +31,13 @@ static std::string ext(const std::string& name) {
     return e;
 }
 
-static std::string findArt(const std::string& dir) {
+static std::string findArt(const std::string& dir, const std::string& mediaStem = "") {
+    // per-song sidecar first — survives the flat prepared-root layout
+    if (!mediaStem.empty())
+        for (auto* e : {".jpg", ".png", ".jpeg"}) {
+            std::string p = join(dir, mediaStem + e);
+            if (isFile(p)) return p;
+        }
     for (auto* n : {"cover.jpg", "cover.png", "cover.jpeg",
                     "folder.jpg", "artwork.jpg"}) {
         std::string p = join(dir, n);
@@ -168,7 +174,8 @@ static std::vector<Song> scanManifest(const std::string& root,
             s.chartPath = findChart(root, s.dir,
                                     stem(s.mediaPath.substr(
                                         s.mediaPath.find_last_of('/') + 1)));
-        s.artPath = findArt(s.dir);
+        s.artPath = findArt(s.dir, stem(s.mediaPath.substr(
+            s.mediaPath.find_last_of('/') + 1)));
         out.push_back(std::move(s));
     }
     return out;
@@ -185,7 +192,8 @@ std::vector<Song> scanCatalog(const std::string& root) {
         if (!pickMedia(s, full)) continue;
         std::tie(s.artist, s.title) = splitFolder(dir);
         s.dir = full;
-        s.artPath = findArt(full);
+        s.artPath = findArt(full, stem(s.mediaPath.substr(
+            s.mediaPath.find_last_of('/') + 1)));
         s.chartPath = findChart(
             root, full,
             stem(s.mediaPath.substr(s.mediaPath.find_last_of('/') + 1)));
@@ -204,7 +212,7 @@ std::vector<Song> scanCatalog(const std::string& root) {
         std::tie(s.artist, s.title) = splitFolder(st);
         if (s.title.empty()) s.title = st;
         s.chartPath = findChart(root, root, st);
-        s.artPath = findArt(root);
+        s.artPath = findArt(root, st);
         out.push_back(std::move(s));
     }
     return out;
