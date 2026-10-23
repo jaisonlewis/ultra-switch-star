@@ -52,6 +52,18 @@ static bool isMedia(const std::string& name) {
            || e == ".m4a" || e == ".ogg" || e == ".wav" || e == ".flac";
 }
 
+/* Stems that must never count as songs: download fragments, pipeline
+   intermediates and yt-dlp per-format leftovers (yt-<id>.f140.m4a). */
+static bool isJunk(const std::string& st, const std::string& e) {
+    if (st.find(".part") != std::string::npos
+        || st.find(".temp") != std::string::npos
+        || st.find(".vocals") != std::string::npos
+        || e == ".ytdl") return true;
+    auto p = st.rfind(".f");
+    return p != std::string::npos && st.size() > p + 2
+           && st[p + 2] >= '0' && st[p + 2] <= '9';
+}
+
 static std::vector<std::string> listDir(const std::string& path,
                                         bool dirsOnly = false) {
     std::vector<std::string> out;
@@ -121,10 +133,7 @@ static bool pickMedia(Song& s, const std::string& dir,
         bool isInst = st.size() > 5
                       && st.compare(st.size() - 5, 5, ".inst") == 0;
         if (isInst) { if (inst.empty()) inst = join(dir, f); continue; }
-        // fragments and temp files never count
-        if (st.find(".part") != std::string::npos
-            || st.find(".temp") != std::string::npos
-            || ext(f) == ".ytdl") continue;
+        if (isJunk(st, ext(f))) continue;
         if (!wantStem.empty() && st != wantStem) continue;
         if (media.empty()) media = join(dir, f);
     }
@@ -201,10 +210,10 @@ std::vector<Song> scanCatalog(const std::string& root) {
     }
     // flat root media files too (un-organized prepared roots)
     for (auto& f : listDir(root)) {
-        if (!isMedia(f) || ext(f) == ".upsong") continue;
+        if (!isMedia(f)) continue;
         std::string st = stem(f);
         if ((st.size() > 5 && st.compare(st.size() - 5, 5, ".inst") == 0)
-            || st.find(".part") != std::string::npos) continue;
+            || isJunk(st, ext(f))) continue;
         Song s;
         s.dir = root;
         s.mediaPath = join(root, f);
