@@ -28,6 +28,10 @@ std::pair<unsigned, unsigned> usbCounts();
 // dump device detail to sdmc:/ultraswitchstar.log
 void usbLogDetail();
 
+// append a timestamped line to sdmc:/ultraswitchstar.log — opened on
+// first call; call it from main() entry so even early hangs log.
+void diag(const char* fmt, ...);
+
 // every mounted device's mount/<subdir> path that exists on disk —
 // e.g. "ums0:/ultrapistar". Returns {} when nothing qualifies.
 std::vector<std::string> usbLibraryRoots(const std::string& subdir);

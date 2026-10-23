@@ -12,10 +12,15 @@ static bool g_usbOn = false;
 static unsigned int g_rc = 0;
 static FILE* g_log = nullptr;
 
-static void ulog(const char* fmt, ...) {
+// first line of defence: opened at main() entry, so even a hang inside
+// fb/usb init leaves a trail. Never logs secrets — diagnostics only.
+void diag(const char* fmt, ...) {
     if (!g_log)
         g_log = fopen("sdmc:/ultraswitchstar.log", "a");
     if (!g_log) return;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    fprintf(g_log, "[%6ld.%03ld] ", ts.tv_sec, ts.tv_nsec / 1000000);
     va_list ap;
     va_start(ap, fmt);
     vfprintf(g_log, fmt, ap);
@@ -26,12 +31,12 @@ static void ulog(const char* fmt, ...) {
 
 bool usbInit() {
     if (g_usbOn) return true;
-    ulog("hos %u.%u.%u — usbHsFsInitialize...",
+    diag("hos %u.%u.%u — usbHsFsInitialize...",
          HOSVER_MAJOR(hosversionGet()),
          HOSVER_MINOR(hosversionGet()),
          HOSVER_MICRO(hosversionGet()));
     g_rc = usbHsFsInitialize(0);
-    ulog("usbHsFsInitialize rc=0x%x", g_rc);
+    diag("usbHsFsInitialize rc=0x%x", g_rc);
     if (R_FAILED(g_rc)) return false;
     g_usbOn = true;
     return true;
@@ -67,12 +72,12 @@ std::pair<unsigned, unsigned> usbCounts() {
 // one diagnostic dump to the SD log — call when the counts change
 void usbLogDetail() {
     auto [seen, mnt] = usbCounts();
-    ulog("usb state: %u physical, %u mounted", seen, mnt);
+    diag("usb state: %u physical, %u mounted", seen, mnt);
     if (!mnt) return;
     UsbHsFsDevice devs[16];
     u32 n = usbHsFsListMountedDevices(devs, 16);
     for (u32 i = 0; i < n; ++i)
-        ulog("  %s vid=%04x pid=%04x fs=%u cap=%lluMB %s %s",
+        diag("  %s vid=%04x pid=%04x fs=%u cap=%lluMB %s %s",
              devs[i].name, devs[i].vid, devs[i].pid, devs[i].fs_type,
              (unsigned long long)(devs[i].capacity >> 20),
              devs[i].manufacturer, devs[i].product_name);

@@ -30,12 +30,15 @@ static const char* gradeFor(const uss::TrackResult& r) {
 }
 
 int main(int argc, char** argv) {
+    uss::diag("=== boot (build %s %s) ===", __DATE__, __TIME__);
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     PadState pad;
     padInitializeDefault(&pad);
+    uss::diag("pad ok, fb.init next");
 
     uss::Fb fb;
     bool fbOk = fb.init();
+    uss::diag("fb.init -> %d", (int)fbOk);
     if (!fbOk) {                        // last-ditch console fallback
         consoleInit(NULL);
         printf("fb init failed\n+: quit\n");
@@ -79,6 +82,8 @@ int main(int argc, char** argv) {
         svcSleepThread(50e6);
     if (usbOk) uss::usbLogDetail();
     std::vector<uss::Song> songs = rescan();
+    uss::diag("scan -> %u songs (%s)", (unsigned)songs.size(),
+              rootsNote.c_str());
     std::unique_ptr<uss::Game> game;
     const uss::Song* pending = nullptr;
     State state = State::Browser;
@@ -192,6 +197,8 @@ int main(int argc, char** argv) {
             if ((k & HidNpadButton_A) && !songs.empty()) {
                 const auto& s = songs[sel];
                 if (!s.chartPath.empty() && !s.mediaPath.empty()) {
+                    uss::diag("start %s (%s)", s.mediaPath.c_str(),
+                              s.instPath.empty() ? "orig" : "has-inst");
                     if (!s.instPath.empty()) {
                         pending = &s;           // has both � ask which mix
                         state = State::Choose;
@@ -228,6 +235,7 @@ int main(int argc, char** argv) {
         } else if (state == State::Play) {
             bool alive = game->frame(fb, buf);
             if ((k & HidNpadButton_B) || !alive) {
+                uss::diag("play ended (%s)", alive ? "B abort" : "eof");
                 game->results();           // finalize even on abort
                 state = State::Results;
             }
