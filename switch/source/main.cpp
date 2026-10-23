@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
                  "usb init failed 0x%x", uss::usbInitRc());
     else
         snprintf(usbStatus, sizeof(usbStatus), "usb: no device mounted");
-    int lastMounts = 0;
+    int lastMounts = 0, lastSeen = 0;
     std::string rootsNote;
     auto rescan = [&]() {
         std::vector<uss::Song> out;
@@ -77,6 +77,7 @@ int main(int argc, char** argv) {
     // give the async UMS mount a moment before the first scan
     for (int i = 0; i < 60 && uss::usbMounts().empty(); ++i)
         svcSleepThread(50e6);
+    if (usbOk) uss::usbLogDetail();
     std::vector<uss::Song> songs = rescan();
     std::unique_ptr<uss::Game> game;
     const uss::Song* pending = nullptr;
@@ -99,10 +100,11 @@ int main(int argc, char** argv) {
             if (usbOk && tick % 120 == 0) {
                 auto [seen, mnt] = uss::usbCounts();
                 int n = (int)mnt;
-                if (n != lastMounts) {
+                if (n != lastMounts || (int)seen != lastSeen) {
+                    uss::usbLogDetail();
+                    lastSeen = (int)seen;
                     lastMounts = n;
                     if (n > 0) {
-                        auto prev = songs.size();
                         songs = rescan();
                         if (sel >= (int)songs.size()) sel = (int)songs.size() - 1;
                         if (sel < 0) sel = 0;

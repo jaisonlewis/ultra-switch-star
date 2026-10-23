@@ -25,6 +25,9 @@ std::vector<std::string> usbMounts();
 // device never enumerated.
 std::pair<unsigned, unsigned> usbCounts();
 
+// dump device detail to sdmc:/ultraswitchstar.log
+void usbLogDetail();
+
 // every mounted device's mount/<subdir> path that exists on disk —
 // e.g. "ums0:/ultrapistar". Returns {} when nothing qualifies.
 std::vector<std::string> usbLibraryRoots(const std::string& subdir);
