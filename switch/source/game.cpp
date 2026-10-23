@@ -61,17 +61,7 @@ bool Game::start(const Song& song, bool karaoke) {
     const std::string& media =
         (karaoke && !song.instPath.empty())
         ? song.instPath : song.mediaPath;
-    // start ~6s before the first sung note — skips talky/drama intros
-    double lead = 0;
-    for (auto& t : chart_.trackNames()) {
-        for (auto& line : chart_.lines(t)) {
-            if (line.empty()) continue;
-            double ms = chart_.beatToMs(line.front()->start);
-            if (!lead || ms < lead) lead = ms;
-            break;
-        }
-    }
-    if (!player_.open(media, lead > 6000 ? lead - 6000 : 0)) return false;
+    if (!player_.open(media)) return false;
 
     beatMs_ = chart_.beatMs();
     gapMs_ = chart_.gapMs();

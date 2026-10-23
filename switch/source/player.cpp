@@ -20,9 +20,8 @@ static int64_t mono_ns() {
     return ts.tv_sec * 1000000000ll + ts.tv_nsec;
 }
 
-bool Player::open(const std::string& path, double startMs) {
+bool Player::open(const std::string& path) {
     quit_ = false; done_ = false;
-    startMs_ = startMs > 0 ? startMs : 0;
     AVFormatContext* fmt = nullptr;
     if (avformat_open_input(&fmt, path.c_str(), nullptr, nullptr) < 0)
         return false;
@@ -61,10 +60,9 @@ double Player::mediaMs() const {
     if (hasAudio_ && audioOn_) {
         u64 n = 0;
         audoutGetAudioOutPlayedSampleCount(&n);
-        return startMs_ + n / 48.0;      // 48000 samples/s -> ms
+        return n / 48.0;                 // 48000 samples/s -> ms
     }
-    // wall clock for audio-less files
-    return startMs_ + (mono_ns() - wall0_) / 1e6;
+    return (mono_ns() - wall0_) / 1e6;   // wall clock for audio-less files
 }
 
 bool Player::frame(uint8_t const** rgba, int* w, int* h) {
@@ -175,14 +173,6 @@ void Player::decodeLoop() {
             }
         }
         if (!actx) hasAudio_ = false;
-    }
-
-    if (startMs_ > 0) {
-        int64_t ts = (int64_t)(startMs_ * 1000);   // stream idx -1 -> usecs
-        if (av_seek_frame(fmt, -1, ts, AVSEEK_FLAG_BACKWARD) >= 0) {
-            if (vctx) avcodec_flush_buffers(vctx);
-            if (actx) avcodec_flush_buffers(actx);
-        }
     }
 
     AVPacket* pkt = av_packet_alloc();
