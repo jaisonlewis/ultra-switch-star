@@ -33,7 +33,8 @@ struct BigThread {
 class Player {
 public:
     ~Player() { close(); }
-    bool open(const std::string& path);
+    // startMs seeks to a lead-in point so long intros don't stall a song
+    bool open(const std::string& path, double startMs = 0);
     void close();
 
     // media clock in ms — audout played samples, or wall clock when the
@@ -59,6 +60,7 @@ private:
     std::string path_;
     int vw_ = 0, vh_ = 0;
     int64_t wall0_ = 0;                    // monotonic start (ns)
+    double startMs_ = 0;                   // seek lead-in (absolute ms)
 
     // decoded video: decode fills vback_, publishes by swapping into
     // vfront_ under vmu_; frame() swaps vfront_ into vshow_ — the buffer
