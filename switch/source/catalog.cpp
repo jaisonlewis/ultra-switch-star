@@ -115,6 +115,18 @@ std::string findChart(const std::string& root, const std::string& dir,
     return out;
 }
 
+/* snake_case slug → "Title Case" for display on manifest-less sticks */
+static std::string unslug(const std::string& s) {
+    std::string out = s;
+    bool cap = true;
+    for (auto& c : out) {
+        if (c == '_' || c == '-') { c = ' '; cap = true; }
+        else if (cap && c >= 'a' && c <= 'z') { c -= 32; cap = false; }
+        else if (c != ' ') cap = false;
+    }
+    return out;
+}
+
 /* 'Artist - Title' folder name → (artist, title). A name without the
    separator lands entirely on title so nothing is silently dropped. */
 static std::pair<std::string, std::string> splitFolder(
@@ -194,19 +206,39 @@ std::vector<Song> scanCatalog(const std::string& root) {
     std::vector<Song> out = scanManifest(root, join(root, "manifest.json"));
     if (!out.empty()) return out;
 
-    // folder-scan fallback — every subdir holding a media file is a song
+    // folder-scan fallback — every subdir holding a media file is a
+    // song; 'Artist - Title/' one-level and 'artist/title/' two-level
+    // layouts both work (the station writes the latter now)
     for (auto& dir : listDir(root, true)) {
         std::string full = join(root, dir);
         Song s;
-        if (!pickMedia(s, full)) continue;
-        std::tie(s.artist, s.title) = splitFolder(dir);
-        s.dir = full;
-        s.artPath = findArt(full, stem(s.mediaPath.substr(
-            s.mediaPath.find_last_of('/') + 1)));
-        s.chartPath = findChart(
-            root, full,
-            stem(s.mediaPath.substr(s.mediaPath.find_last_of('/') + 1)));
-        out.push_back(std::move(s));
+        if (pickMedia(s, full)) {
+            std::tie(s.artist, s.title) = splitFolder(dir);
+            s.dir = full;
+            s.artPath = findArt(full, stem(s.mediaPath.substr(
+                s.mediaPath.find_last_of('/') + 1)));
+            s.chartPath = findChart(
+                root, full,
+                stem(s.mediaPath.substr(s.mediaPath.find_last_of('/') + 1)));
+            out.push_back(std::move(s));
+            continue;
+        }
+        // no media at this level — treat it as an artist dir and scan
+        // its children as song folders (artist = dir, title = leaf)
+        for (auto& sub : listDir(full, true)) {
+            std::string leaf = join(full, sub);
+            Song s2;
+            if (!pickMedia(s2, leaf)) continue;
+            s2.artist = unslug(dir);
+            s2.title = unslug(sub);
+            s2.dir = leaf;
+            s2.artPath = findArt(leaf, stem(s2.mediaPath.substr(
+                s2.mediaPath.find_last_of('/') + 1)));
+            s2.chartPath = findChart(
+                root, leaf,
+                stem(s2.mediaPath.substr(s2.mediaPath.find_last_of('/') + 1)));
+            out.push_back(std::move(s2));
+        }
     }
     // flat root media files too (un-organized prepared roots)
     for (auto& f : listDir(root)) {
