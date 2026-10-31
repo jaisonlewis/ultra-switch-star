@@ -1,273 +1,130 @@
-# Ultra Pi Star
+# Ultra Switch Star
 
-Open-source Raspberry Pi karaoke appliance: boots straight into a TV
-karaoke experience — no keyboard, no setup. Phones join over the LAN via
-QR code or room code to search, queue, and sing. PiKaraoke-style remote +
-UltraStar-style charted scoring, fully offline once media is cached.
-Design history: `Raspberry_Pi_Karaoke_Phased_Plan (1).md`.
+Nintendo Switch karaoke — a homebrew port of the Ultra Pi Star
+karaoke loop: prepared songs play off the SD card, mic input is
+pitch-tracked, and singing is scored against the shared `.upsong`
+chart format. One prepared USB stick serves an Ultra Pi Star, an
+Ultra Switch Star, and every desktop build — same folders, same
+charts, same scoring.
 
-## What it does
+This repo holds two things:
 
-**TV screen** (`/tv`, Chromium kiosk on the Pi's HDMI display)
-- Idle screen with QR code + upcoming queue
-- Full-screen `<video>` playback — the media clock drives lyrics, pitch
-  lanes, and scoring
-- Pre-song singer handoff with countdown, scored vs. video-only badges
-- Audio-only songs (MP3 uploads) get a music-reactive psychedelic
-  visualizer rendered on a WebAudio-driven canvas — lyrics and scoring
-  still overlay it
-- Holds on "Preparing lyrics…" while the chart pipeline finishes, then
-  starts playback with everything attached
+- `switch/` — the native Switch client (libnx, ffmpeg, audin mic,
+  framebuffer renderer). Builds to `ultraswitchstar.nro`.
+  Architecture and controls live in `switch/README.md`.
+- `ultrapistar/` + `station/` + `run.py` — the Python reference app
+  this project shares its chart/scoring logic with (the Ultra Pi
+  Star codebase the ports track). See "The shared library" below for
+  why it's vendored here.
 
-**Phone remote** (`/`)
-- Display-name join, search, library browse, add-to-queue, duet partner +
-  vocal-part selection, remove-own-song, per-song vocal-cut toggle
-- **Upload your own songs** — MP4 video or MP3 (also m4a/ogg/wav/flac/
-  webm/mkv) straight from the phone; artist/title parsed from
-  `Artist - Title.ext` filenames, or entered manually
+## The shared library
 
-**Host console** (`/host?key=<HOST_KEY>`)
-- Reorder/remove/clear queue, skip, pause/resume, volume, live chart
-  sync nudge, library management (delete/repair entries), mic assignment
-  and FX
-
-**Song acquisition**
-- YouTube provider (yt-dlp): search biased toward official/Vevo uploads,
-  downloaded once to `media/` (≤1080p, merged mp4) and reused forever
-- Uploads land in `media/` as first-class local entries
-- Local `.txt` UltraStar chart drops (`charts/`, `chart-library/`) are
-  indexed as fallback charts
-
-**The native chart pipeline** (queue-time worker — runs while earlier
-songs play)
-1. Vocal separation (sherpa-onnx Spleeter int8) → vocal stem + a
-   vocal-reduced `*.inst.mp4` karaoke backing
-2. Lyrics: LRCLIB **and** SyncLRC fetched, best record picked by ASR
-   word-match + duration/span proximity (incomplete records penalized)
-3. ASR word timing (needle) anchors the lyric lines
-4. RMVPE pitch extraction on the vocal stem → note chart
-5. Result: a native `.upsong` chart timed to *that exact media file*
-   (imported charts are only a fallback, warped to the media when the
-   generator can't produce one)
-
-**Loudness normalization** — every file (raw and karaoke backing) is
-two-pass loudnorm'd to −16 LUFS at ingest, so base volume is consistent
-across the library and toggling vocal-cut doesn't change the level.
-
-**Microphones & scoring**
-- ALSA/PipeWire capture, WorldParty-ported autocorrelation pitch
-  detection + note-hit/line-bonus scoring (`pitch.py`, `scoring.py`)
-- Live pitch lanes + sung-note trails on the TV, per-singer mic FX
-  (pitch, autotune, echo, reverb), latency calibration
-- Duets: two singers, per-track scoring
-
-**Self-healing**
-- Kiosk liveness watchdog restarts a wedged Chromium (stale positions,
-  dead socket, stuck resume)
-- "Preparing lyrics…" waits are time-boxed — a wedged pipeline degrades
-  to raw playback instead of hanging the queue
-- Audio watchdog restarts wireplumber when playing into "Dummy Output"
-- Asset fingerprint handshake reloads stale kiosk pages after deploys
-- systemd units (`ultrapistar`, `ultrapistar-kiosk`) restart on crash
-
-## Prep station (GPU workstation)
-
-`station/` offloads the whole queue-time pipeline to a PC with a GPU —
-the Pi then only ever *plays* finished bundles:
-
-```bash
-pip install -r requirements.txt -r requirements-station.txt
-python -m station          # Tkinter window
+```
+sdmc:/ultrapistar/                    (or a USB stick's root)
+  manifest.json                       station bundle index — optional
+  adele/hello/
+    yt-<id>.mp4                       media
+    yt-<id>.inst.mp4                  karaoke backing (preferred)
+    yt-<id>.vocals.wav                vocal stem
+    yt-<id>.analysis.json             ASR/pitch/alignment evidence
+    yt-<id>.jpg                       artwork
+    Adele - Hello.upsong              chart
 ```
 
-Paste a video or playlist URL, pick the output (a prepared USB stick —
-auto-detected — or any folder), optionally tick "Push finished songs
-to Pi" with the Pi's address + host key. Settings persist between runs.
+`<artist_slug>/<title_slug>/` is `mediastore.song_reldir()` — the one
+layout convention every consumer (Pi, Switch, desktop, prep stations)
+shares. Manifest paths are root-relative so Pi and Switch resolve
+them identically. A stick prepared on a PC plugs straight into
+either device.
 
-**Model tiers** — pick what matches the card (auto-detected by default):
+## Charts: CTC forced alignment
 
-| Tier | ASR | Separation |
-|---|---|---|
-| CPU (no GPU) | whisper small (int8) | htdemucs |
-| GPU ≤ 6 GB | whisper medium (fp16) | htdemucs |
-| GPU 8–16 GB | whisper large-v3 (fp16) | htdemucs |
-| GPU 24 GB+ | whisper large-v3 (fp16) | htdemucs_ft (fine-tuned) |
+`.upsong` v2 is the canonical chart format — every consumer loads it
+natively. Modern charts are made by **CTC forced alignment**, not by
+text-matching an ASR transcript: the lyric text is Viterbi-aligned
+against frame log-posteriors a CTC acoustic model emits for the
+vocal stem (Parakeet-CTC-110M for English, Omnilingual-300M-CTC for
+other languages), with skip states between lines so instrumentals
+and ad-libs can't drag the alignment. Word onsets snap to
+spectral-flux vocal attacks; ends are voicing-bounded and capped.
+Charts carry `lyrics: "ctc-<backend>"` provenance in their source
+block; imported human-timed charts always win over generated ones.
 
-Per song it runs: yt-dlp download → loudness → **demucs htdemucs**
-separation → lyrics first (LRCLIB/SyncLRC — ASR is only the timing
-backbone, and the last-resort lyric source) → **faster-whisper
-large-v3** word timing (~99 languages incl. Hindi — whisper emits the
-native script) → **RMVPE** pitch → `.upsong` chart → karaoke backing.
+Producers: `ups-prep` (Rust, `I:\AI\ultra-pi-star-rust`) and the
+Python pipeline (`ultrapistar/ctcalign.py` + `genchart.py`) emit the
+same format — one algorithm, two ports. Batch recharting a library:
 
-Two delivery paths:
+```bash
+# Rust (fast, sharded, resumable — aligned charts self-skip)
+ups-prep batch --library <root> --shard 0 --shards 8 [--force]
 
-- **USB stick** — write bundles onto a prepared stick (the same
-  `ultrapistar/` or `.upsmedia` convention), plug it into the Pi. A
-  `manifest.json` on the media root self-registers at boot, or run
-  `POST /api/manage/import-scan` as host.
-- **LAN push** — each finished song posts a zip to
-  `POST /api/import-bundle` (host-key auth). Same registration: entry
-  lands `available` with its chart attached — the Pi never
-  reprocesses it. Already-known songs skip.
+# Python
+python -m station.rechart <root> --models <dir>
+```
 
-Station-generated charts record the detected language on the song, and
-`norm_word` is Unicode-aware so Hindi and other non-Latin lyrics match
-their ASR evidence instead of normalizing to nothing.
+## The Switch client (switch/)
 
-## Run locally
+devkitPro + libnx native app:
+
+```bash
+export DEVKITPRO=/opt/devkitpro
+cd switch && make        # -> ultraswitchstar.nro
+```
+
+Copies to `sdmc:/switch/ultraswitchstar/ultraswitchstar.nro`. Scans
+`sdmc:/ultrapistar/` (and USB volumes via usbhsfs) for the shared
+layout above; plays the `.inst.mp4` karaoke backing when present,
+renders lyrics + pitch lane + sung-note trail on a linear
+framebuffer (FreeType + Horizon system font), captures the mic via
+audin and scores against the chart — a C++ port of
+`ultrapistar/pitch.py` + `ultrapistar/scoring.py` (WorldParty
+sing-loop: per-beat hits, semitone tolerance, golden ×2, line
+bonuses, streaks). Media clock is the audout played-sample counter,
+so video and scoring can't drift.
+
+Full module map and controls: `switch/README.md`.
+
+## Python app (reference fork)
+
+`run.py` runs the same Flask + Socket.IO karaoke server as Ultra Pi
+Star — `ultrapistar/` is kept vendored so the C++ ports have their
+reference implementation in-tree and `station/` can prep libraries
+without a second checkout.
 
 ```bash
 pip install -r requirements.txt
-python run.py
+python run.py           # phones join over LAN; /tv is the screen
+python -m pytest tests -q
 ```
 
-Console prints the TV URL, LAN join URL (encoded in the QR code) and
-the host key. Open `/tv` for the TV; phones browse the join URL.
-ffmpeg + ffprobe must be on PATH.
-
-## Install on a Raspberry Pi
-
-Two ways, depending on how dedicated the Pi is:
-
-### Appliance install (boots straight into karaoke)
-
-On the Pi (or from a cloned repo — the same script the deploy uses):
+Prep station (offload the whole pipeline to a PC):
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/jaisonlewis/Ultra-Pi-Star/AI/scripts/install-pi.sh | bash
+pip install -r requirements-station.txt
+python -m station       # Tkinter window → prepared stick / LAN push
 ```
 
-Sets up `/opt/ultrapistar` with a venv, downloads the separation + pitch
-models, and registers:
-
-- `ultrapistar.service` (system) — the app on port 5000, boots with the Pi
-- `ultrapistar-kiosk.service` (user) — supervised Chromium kiosk → `/tv`
-- labwc autostart → boots straight into karaoke on the HDMI display
-- Raspberry Pi Connect for remote access
-
-To push updates from a dev machine instead:
-
-```bash
-PI_PASS=<pi-password> ./scripts/deploy-pi.sh <pi-host-or-ip> <pi-user>
-```
-
-Deploys are rsync-safe: `media/`, `charts/`, and `data/` are runtime
-data and never wiped — uploaded songs, downloads, and stems persist.
-
-### Lightweight install (on-demand, no takeover)
-
-Same Pi, but keeps your desktop/session — nothing starts at boot:
-
-```bash
-curl -sSL https://raw.githubusercontent.com/jaisonlewis/Ultra-Pi-Star/AI/scripts/install-user.sh | bash
-```
-
-Installs to `~/ultrapistar` with the same venv + models, and drops a
-**disabled** user systemd unit. Then:
-
-```bash
-~/ultrapistar/.venv/bin/python ~/ultrapistar/run.py   # run a session
-systemctl --user start ultrapistar                  # or as a service
-systemctl --user enable ultrapistar                 # opt into autostart
-```
-
-No kiosk, no autostart, no remote-access changes — open
-`http://localhost:5000/tv` in any browser for the TV view.
-`UPS_APP_DIR` overrides the install location.
-
-## Layout
+Model dirs for the CTC aligner (`--models`/`UPS_MODELS_DIR`):
 
 ```
-ultrapistar/
-  app.py            Flask+SocketIO assembly, kiosk + audio watchdogs
-  config.py         env/YAML config (UPS_*), LAN IP, host key
-  db.py             SQLite schema + helpers
-  catalog.py        song/media-entry/chart records, search, seeding
-  queue_manager.py  queue state machine
-  downloads.py      background provider ingest
-  providers/        MediaProvider interface: local, youtube, registry
-  separate.py       vocal/accompaniment separation, karaoke remux
-  songmap.py        ASR transcript → word/line timing maps
-  lyrics.py         LRCLIB + SyncLRC fetch, best-record selection
-  melody.py         RMVPE pitch curve → notes
-  genchart.py       native .upsong chart generation
-  charts.py         UltraStar .txt parser (imported charts)
-  align.py          chroma chart→media alignment (warp fallback)
-  loudness.py       EBU R128 normalization (two-pass loudnorm)
-  mic.py            mic capture, pitch gate, FX, calibration
-  sing.py           live scoring session (media clock × mic pitch)
-  pitch.py/scoring.py  WorldParty-ported pitch detector + scoring
-  audio.py          PipeWire output routing
-  artwork.py        album art lookup + cache
-  web/
-    pages.py        / /tv /host /media routes
-    api.py          JSON API, uploads, manage endpoints, map worker
-    sockets.py      realtime state/playback events
-    templates/      phone, tv, host pages
-    static/         css, js, vendored socket.io client
-media/              local files: downloads, uploads (runtime data)
-charts/             UltraStar .txt drop folder (rescanned on boot)
-chart-library/      imported chart libraries
-data/               sqlite db + config.yaml (runtime)
-models/             spleeter int8 + rmvpe.onnx (downloaded by installer)
-tests/              pytest suite
-scripts/            install-pi.sh (appliance), install-user.sh (light), deploy-pi.sh, probes
+models/
+  sherpa-onnx-nemo-parakeet_tdt_ctc_110m-en-36000-int8/   English
+  sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-*/  multilingual
+  rmvpe.onnx                                            pitch
 ```
 
-### USB media storage
-
-A mounted USB stick can take over media storage without losing the
-SD-card library. To opt a stick in, put either an `ultrapistar/` folder
-or an empty `.upsmedia` file at the stick's root (a random drive is
-never hijacked). On the next boot:
-
-- new downloads, uploads and derived files write to the stick
-- everything already on the SD card keeps resolving as a read fallback —
-  the two roots look like one library
-- pulling the stick just drops the new files from view; reinsert and
-  they're back
-
-Checked at boot under `/media`, `/run/media` and `/mnt`. Opt out with
-`UPS_NO_USB=1`; `UPS_MEDIA_DIR` always wins over auto-detection.
-
-## Config (env vars)
-
-| Var | Default | Purpose |
-|---|---|---|
-| `UPS_PORT` | 5000 | HTTP port |
-| `UPS_HOST` | 0.0.0.0 | bind address |
-| `UPS_HOST_KEY` | random per boot | host-console room code |
-| `UPS_DATA_DIR` | `data/` | SQLite + config.yaml |
-| `UPS_MEDIA_DIR` | auto | write target for media — a prepared USB stick if one is mounted, else `media/` |
-| `UPS_MEDIA_DIRS` | — | extra read-only media roots (colon-separated) |
-| `UPS_NO_USB` | — | set to `1` to disable USB media auto-detect |
-| `UPS_CHART_DIR` | `charts/` | `.txt` chart drop folder |
-| `UPS_CHART_LIB` | `chart-library/` | imported chart libraries |
-| `UPS_MODELS_DIR` | `models/` | separation + pitch models |
-| `UPS_PROVIDERS` | `local,youtube` | enabled providers (comma list) |
-| `UPS_VOCAL_CUT` | 1 | default vocal-reduced playback when available |
-| `UPS_KARAOKE_GUIDE` | 0.15 | vocal bleed-back into karaoke backing |
-| `UPS_NORMALIZE` | 1 | loudness-normalize media at ingest |
-| `UPS_INTERMISSION_SEC` | 30 | pre-song countdown |
-| `UPS_DIFFICULTY` | 0 | scoring strictness |
-| `UPS_MIC_DEVICE` / `UPS_PLAY_DEVICE` | default | ALSA devices |
-| `UPS_TRUST_SOURCES` | — | chart source_repo tags to auto-verify |
-| `UPS_CONFIG_YAML` | `data/config.yaml` | user-editable YAML config |
-
-## Scoring
-
-`ultrapistar/pitch.py` and `ultrapistar/scoring.py` are Python ports of
-WorldParty's autocorrelation pitch detector and note-hit/line-bonus
-scoring (`URecord.pas`, `UNote.pas`, `UScreenSingController.pas`).
-Ported under GPL-3.0 with upstream copyright retained — see `NOTICE.md`.
+Without them the Python pipeline falls back to faster-whisper ASR
+word-timing + fuzzy lyric matching.
 
 ## Tests
 
 ```bash
-python -m pytest tests -q
+python -m pytest tests -q     # Python half
+cd switch/test                # C++ side (devkitPro toolchain)
 ```
 
 ## License
 
-GPL-3.0 — see `LICENSE`. Third-party and ported components are
-inventoried in `NOTICE.md`.
+GPL-3.0 — see `LICENSE`. `ultrapistar/pitch.py` and
+`ultrapistar/scoring.py` (and their C++ ports in `switch/source/`)
+are ports of GPL-3.0 WorldParty code; inventory in `NOTICE.md`.
